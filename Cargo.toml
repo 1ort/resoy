@@ -1,0 +1,12 @@
+[package]
+name = "resoy"
+version = "1.0.0"
+edition = "2021"
+authors = ["Daniil", "1ort <github.com/1ort>"]
+description = "Resoy is small cli tool for DNS queries"
+homepage = "https://github.com/1ort/resoy"
+repository = "https://github.com/1ort/resoy"
+
+[dependencies]
+clap = { version = "4.5.23", features = ["derive"] }
+hickory-client = "0.24.2"
