@@ -4,25 +4,12 @@ Resoy is a small command-line tool for performing DNS queries. It allows you to 
 
 ## Installation
 
-To install Resoy, you need to have Rust and Cargo installed. Follow these steps:
+To install Resoy, you need to have Rust and Cargo installed. Just type:
 
-1. Clone the repository:
+```sh
+cargo install --git https://github.com/1ort/resoy.git
+```
 
-   ```sh
-   git clone https://github.com/1ort/resoy.git
-   ```
-
-2. Navigate to the project directory:
-
-   ```sh
-   cd resoy
-   ```
-
-3. Install the tool using Cargo:
-
-   ```sh
-   cargo install --path .
-   ```
 ## Usage
 
 ```sh
