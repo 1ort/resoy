@@ -7,6 +7,9 @@ use hickory_client::{
     rr::{DNSClass, Name, Record, RecordType},
     udp::UdpClientConnection,
 };
+extern crate termion;
+use termion::color::{AnsiValue, Fg, Reset};
+
 /// Simple dns resolve tool
 #[derive(Parser)]
 #[command(version, about)]
@@ -14,13 +17,21 @@ struct Cli {
     /// domain name to resolve
     name: String,
 
-    /// record types to check separated by space
     #[arg(default_values_t=vec![String::from("A")], value_delimiter = ' ', num_args=1..)]
     record_types: Vec<String>,
+    /// record types to check separated by space
 
     /// dns server to use
     #[arg(short, long, default_value_t = String::from("1.1.1.1:53"))]
     server: String,
+
+    /// disable ansi-colored output
+    #[arg(long, default_value_t = false)]
+    no_ansi: bool,
+
+    /// do not format ttl
+    #[arg(long, default_value_t = false)]
+    seconds: bool,
 }
 
 fn main() {
@@ -42,7 +53,11 @@ fn main() {
     for result in results {
         let record_type = result.record_type().to_string();
         let name = result.name().to_string();
-        let ttl = format_duration(result.ttl());
+        let ttl = if cli.seconds {
+            result.ttl().to_string()
+        } else {
+            format_duration(result.ttl())
+        };
 
         let payload = {
             if let Some(result_data) = result.data() {
@@ -52,7 +67,16 @@ fn main() {
             }
         };
 
-        println!("{record_type:>5} {name} {ttl:>12} {payload}")
+        if cli.no_ansi {
+            println!("{record_type:>5} {name} {ttl:>12} {payload}",)
+        } else {
+            let color = Fg(record_type_to_ansi(result.record_type()));
+            let reset_color = Fg(Reset);
+
+            let name_color = Fg(AnsiValue(75));
+
+            println!("{color}{record_type:>5}{reset_color} {name_color}{name}{reset_color} {ttl:>12} {payload}",)
+        }
     }
 }
 
@@ -79,6 +103,49 @@ fn parse_record_types(raw: Vec<String>) -> Vec<RecordType> {
                 .unwrap_or_else(|_| panic!("Unknown record type: {:?}", value))
         })
         .collect()
+}
+
+fn record_type_to_ansi(rt: RecordType) -> AnsiValue {
+    use RecordType::*;
+    match rt {
+        A => AnsiValue(1),           // Red
+        AAAA => AnsiValue(2),        // Green
+        ANAME => AnsiValue(3),       // Yellow
+        ANY => AnsiValue(4),         // Blue
+        AXFR => AnsiValue(5),        // Magenta
+        CAA => AnsiValue(6),         // Cyan
+        CDS => AnsiValue(7),         // Light gray
+        CDNSKEY => AnsiValue(8),     // Dark gray
+        CSYNC => AnsiValue(9),       // Light red
+        DNSKEY => AnsiValue(10),     // Light green
+        DS => AnsiValue(11),         // Light yellow
+        HINFO => AnsiValue(12),      // Light blue
+        HTTPS => AnsiValue(13),      // Light magenta
+        IXFR => AnsiValue(14),       // Light cyan
+        KEY => AnsiValue(15),        // White
+        MX => AnsiValue(38),         // Bright red
+        NAPTR => AnsiValue(17),      // Bright green
+        NS => AnsiValue(18),         // Bright yellow
+        NSEC => AnsiValue(19),       // Bright blue
+        NSEC3 => AnsiValue(20),      // Bright magenta
+        NSEC3PARAM => AnsiValue(21), // Bright cyan
+        NULL => AnsiValue(22),       // Bright white
+        OPENPGPKEY => AnsiValue(23), // Default color
+        OPT => AnsiValue(24),        // Default color
+        PTR => AnsiValue(25),        // Default color
+        RRSIG => AnsiValue(26),      // Default color
+        SIG => AnsiValue(27),        // Default color
+        SOA => AnsiValue(28),        // Default color
+        SRV => AnsiValue(29),        // Default color
+        SSHFP => AnsiValue(30),      // Default color
+        SVCB => AnsiValue(31),       // Default color
+        TLSA => AnsiValue(32),       // Default color
+        TSIG => AnsiValue(33),       // Default color
+        TXT => AnsiValue(34),        // Default color
+        Unknown(_) => AnsiValue(35), // Default color
+        ZERO => AnsiValue(36),       // Default color
+        _ => AnsiValue(37),
+    }
 }
 
 fn format_duration(seconds: u32) -> String {
