@@ -1,7 +1,7 @@
 # Resoy
 
+![out](https://github.com/user-attachments/assets/e5a09480-e1b2-4c17-a0f0-fa760407e2ce)
 Resoy is a small command-line tool for performing DNS queries. It allows you to resolve domain names and retrieve various DNS record types.
-
 ## Installation
 
 To install Resoy, you need to have Rust and Cargo installed. Just type:
