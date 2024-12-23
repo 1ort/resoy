@@ -21,11 +21,23 @@ resoy example.com A AAAA NS CNAME
 
 # Specify a Custom DNS Server
 resoy --server 8.8.8.8:53 example.com A AAAA
+
+# Disable ANSI-colored output
+resoy --no-ansi example.com
+
+# Display TTL in seconds without formatting
+resoy --seconds example.com
+
+# Use TCP connection instead of UDP
+resoy --connection tcp example.com
 ```
 
 ## Options
 
 - `-s, --server <SERVER>`: Specify the DNS server to use (default: `1.1.1.1:53`).
+- `--no-ansi`: Disable ANSI-colored output.
+- `--seconds`: Display TTL in seconds without formatting.
+- `-c, --connection <CONNECTION>`: Specify the connection type (default: `udp`, possible values: `udp`, `tcp`).
 - `-h, --help`: Print the help message.
 - `-V, --version`: Print the version of Resoy.
 
