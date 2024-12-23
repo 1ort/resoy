@@ -11,3 +11,6 @@ repository = "https://github.com/1ort/resoy"
 clap = { version = "4.5.23", features = ["derive"] }
 hickory-client = { version = "0.24.2" }
 termion = "4.0.3"
+
+[profile.release]
+lto = true
