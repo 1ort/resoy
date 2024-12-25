@@ -2,7 +2,7 @@ use std::{collections::HashSet, fmt::Display, str::FromStr};
 
 use clap::{Parser, ValueEnum};
 use hickory_client::{
-    client::{Client, ClientConnection, SyncClient},
+    client::{Client, SyncClient},
     error::ClientResult,
     op::DnsResponse,
     rr::{DNSClass, Name, Record, RecordType},
@@ -64,7 +64,7 @@ impl Display for ConnectionType {
 fn main() {
     let cli = Cli::parse();
 
-    let client = make_dns_client(cli.connection, &cli.server);
+    let client = DnsClient::new(cli.connection, &cli.server);
     let name = parse_domain_name(&cli.name);
 
     let record_types = parse_record_types(cli.record_types);
@@ -72,7 +72,7 @@ fn main() {
     let mut results: Vec<Record> = vec![];
 
     for record_type in record_types {
-        let response: DnsResponse = client.resolve(&name, DNSClass::IN, record_type).unwrap();
+        let response: DnsResponse = client.query(&name, DNSClass::IN, record_type).unwrap();
         let answers: &[Record] = response.answers();
         results.extend_from_slice(answers);
     }
@@ -111,46 +111,50 @@ fn parse_domain_name(name: &str) -> Name {
     Name::from_str(name).expect("invalid name")
 }
 
-trait DnsClient {
-    fn resolve(
-        &self,
-        name: &Name,
-        query_class: DNSClass,
-        query_type: RecordType,
-    ) -> ClientResult<DnsResponse>;
+enum DnsClient {
+    Tcp(SyncClient<TcpClientConnection>),
+    Udp(SyncClient<UdpClientConnection>),
 }
 
-impl<T: ClientConnection> DnsClient for SyncClient<T> {
-    fn resolve(
+impl DnsClient {
+    fn new(
+        connection_type: ConnectionType,
+        raw_addr: &str,
+    ) -> Self {
+        {
+            let socket_addr = raw_addr
+                .parse()
+                .unwrap_or_else(|_| panic!("Cannot parse dns server address: {:?}", raw_addr));
+
+            match connection_type {
+                ConnectionType::Udp => {
+                    Self::Udp(SyncClient::new(
+                        UdpClientConnection::new(socket_addr).unwrap_or_else(|_| {
+                            panic!("Cannot establish udp connection with {:?}", raw_addr)
+                        }),
+                    ))
+                },
+                ConnectionType::Tcp => {
+                    Self::Tcp(SyncClient::new(
+                        TcpClientConnection::new(socket_addr).unwrap_or_else(|_| {
+                            panic!("Cannot establish tcp connection with {:?}", raw_addr)
+                        }),
+                    ))
+                },
+            }
+        }
+    }
+
+    fn query(
         &self,
         name: &Name,
         query_class: DNSClass,
         query_type: RecordType,
     ) -> ClientResult<DnsResponse> {
-        self.query(name, query_class, query_type)
-    }
-}
-
-fn make_dns_client(
-    connection_type: ConnectionType,
-    raw_addr: &str,
-) -> Box<dyn DnsClient> {
-    let socket_addr = raw_addr
-        .parse()
-        .unwrap_or_else(|_| panic!("Cannot parse dns server address: {:?}", raw_addr));
-
-    match connection_type {
-        ConnectionType::Udp => {
-            let conn = UdpClientConnection::new(socket_addr)
-                .unwrap_or_else(|_| panic!("Cannot establish udp connection with {:?}", raw_addr));
-            Box::new(SyncClient::new(conn))
-        },
-        ConnectionType::Tcp => {
-            let conn = TcpClientConnection::new(socket_addr)
-                .unwrap_or_else(|_| panic!("Cannot establish tcp connection with {:?}", raw_addr));
-
-            Box::new(SyncClient::new(conn))
-        },
+        match self {
+            Self::Tcp(client) => client.query(name, query_class, query_type),
+            Self::Udp(client) => client.query(name, query_class, query_type),
+        }
     }
 }
 
