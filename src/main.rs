@@ -9,7 +9,9 @@ use hickory_client::{
     tcp::TcpClientConnection,
     udp::UdpClientConnection,
 };
+#[cfg(not(windows))]
 extern crate termion;
+#[cfg(not(windows))]
 use termion::color::{AnsiValue, Fg, Reset};
 
 /// Simple dns resolve tool
@@ -78,7 +80,7 @@ fn main() {
     }
 
     for result in results {
-        let record_type = result.record_type().to_string();
+        let record_type = result.record_type();
         let name = result.name().to_string();
         let ttl = if cli.seconds {
             result.ttl().to_string()
@@ -94,16 +96,65 @@ fn main() {
             }
         };
 
-        if cli.no_ansi {
-            println!("{record_type:>5} {name} {ttl:>12} {payload}",)
+        RecordOutput {
+            record_type,
+            name,
+            ttl,
+            payload,
+        }
+        .render(!cli.no_ansi);
+    }
+}
+
+struct RecordOutput {
+    record_type: RecordType,
+    name: String,
+    ttl: String,
+    payload: String,
+}
+
+impl RecordOutput {
+    #[cfg(not(windows))]
+    fn render(
+        &self,
+        ansi: bool,
+    ) {
+        if !ansi {
+            println!(
+                "{:>5} {} {:>12} {}",
+                self.record_type.to_string(),
+                self.name,
+                self.ttl,
+                self.payload,
+            )
         } else {
-            let color = Fg(record_type_to_ansi(result.record_type()));
+            let color = Fg(record_type_to_ansi(self.record_type));
             let reset_color = Fg(Reset);
 
             let name_color = Fg(AnsiValue(75));
 
-            println!("{color}{record_type:>5}{reset_color} {name_color}{name}{reset_color} {ttl:>12} {payload}",)
+            println!(
+                "{color}{:>5}{reset_color} {name_color}{}{reset_color} {:>12} {}",
+                self.record_type.to_string(),
+                self.name,
+                self.ttl,
+                self.payload,
+            )
         }
+    }
+
+    #[cfg(windows)]
+    fn render(
+        &self,
+        _ansi: bool,
+    ) {
+        println!(
+            "{:>5} {} {:>12} {}",
+            self.record_type.to_string(),
+            self.name,
+            self.ttl,
+            self.payload,
+        )
     }
 }
 
@@ -170,6 +221,7 @@ fn parse_record_types(raw: Vec<String>) -> Vec<RecordType> {
         .collect()
 }
 
+#[cfg(not(windows))]
 fn record_type_to_ansi(rt: RecordType) -> AnsiValue {
     use RecordType::*;
     match rt {
