@@ -1,12 +1,17 @@
 mod format;
 
-use std::{collections::HashSet, fmt::Display, str::FromStr};
+use std::{
+    collections::HashSet,
+    fmt::{Debug, Display},
+    ptr::write,
+    str::FromStr,
+};
 
 use clap::{Parser, ValueEnum};
 use format::{OutputConfig, RecordFormatter};
 use hickory_client::{
     client::{Client, SyncClient},
-    error::ClientResult,
+    error::{ClientError, ClientResult},
     op::DnsResponse,
     rr::{DNSClass, Name, Record, RecordType},
     tcp::TcpClientConnection,
@@ -42,20 +47,19 @@ struct Cli {
 }
 
 impl Cli {
-    fn parse_record_types(&self) -> Vec<RecordType> {
-        let unique: HashSet<&String> = HashSet::from_iter(&self.record_types);
-
-        unique
+    fn parse_record_types(&self) -> Result<Vec<RecordType>, AppError> {
+        self.record_types
             .iter()
+            .collect::<HashSet<_>>()
+            .into_iter()
             .map(|value| {
-                RecordType::from_str(value)
-                    .unwrap_or_else(|_| panic!("Unknown record type: {:?}", value))
+                RecordType::from_str(value).map_err(|_| AppError::UnknownRecordType(value.clone()))
             })
             .collect()
     }
 
-    fn parse_domain_name(&self) -> Name {
-        Name::from_str(&self.name).expect("invalid name")
+    fn parse_domain_name(&self) -> Result<Name, AppError> {
+        Name::from_str(&self.name).map_err(|_| AppError::InvalidDomainName(self.name.clone()))
     }
 
     fn parse_output_config(&self) -> OutputConfig {
@@ -63,7 +67,7 @@ impl Cli {
     }
 }
 
-#[derive(ValueEnum, Clone, Debug)]
+#[derive(ValueEnum, Clone, Debug, Copy)]
 #[clap(rename_all = "kebab_case")]
 enum ConnectionType {
     Udp,
@@ -84,18 +88,55 @@ impl Display for ConnectionType {
     }
 }
 
-fn main() {
+enum AppError {
+    InvalidDomainName(String),
+    UnknownRecordType(String),
+    InvalidDnsServer(String),
+    DNSServerUnreachable(ConnectionType, String),
+    QueryError(ClientError),
+}
+
+impl Debug for AppError {
+    fn fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        match self {
+            Self::InvalidDomainName(domain) => write!(f, "Invalid name: {:?}", domain),
+            Self::UnknownRecordType(record_type) => {
+                write!(f, "Cannot parse record type: {:?}", record_type)
+            },
+            Self::InvalidDnsServer(host) => {
+                write!(f, "Cannot parse DNS server address: {:?}", host)
+            },
+            Self::DNSServerUnreachable(connection_type, host) => {
+                write!(
+                    f,
+                    "Cannot establish {} connection with {:?}",
+                    connection_type, host
+                )
+            },
+            Self::QueryError(client_error) => {
+                write!(f, "Cannot send DNS query: {}", client_error)
+            },
+        }
+    }
+}
+
+fn main() -> Result<(), AppError> {
     let cli = Cli::parse();
 
-    let client = DnsClient::new(&cli.connection, &cli.server);
-    let name = cli.parse_domain_name();
+    let client = DnsClient::new(cli.connection, &cli.server)?;
+    let name = cli.parse_domain_name()?;
 
-    let record_types = cli.parse_record_types();
+    let record_types = cli.parse_record_types()?;
 
     let mut results: Vec<Record> = vec![];
 
     for record_type in record_types {
-        let response: DnsResponse = client.query(&name, DNSClass::IN, record_type).unwrap();
+        let response: DnsResponse = client
+            .query(&name, DNSClass::IN, record_type)
+            .map_err(AppError::QueryError)?;
         let answers: &[Record] = response.answers();
         results.extend_from_slice(answers);
     }
@@ -105,6 +146,7 @@ fn main() {
     for result in results {
         println!("{}", RecordFormatter::new(result, &output_config).format())
     }
+    Ok(())
 }
 
 enum DnsClient {
@@ -114,30 +156,30 @@ enum DnsClient {
 
 impl DnsClient {
     fn new(
-        connection_type: &ConnectionType,
+        connection_type: ConnectionType,
         raw_addr: &str,
-    ) -> Self {
+    ) -> Result<Self, AppError> {
         {
             let socket_addr = raw_addr
                 .parse()
-                .unwrap_or_else(|_| panic!("Cannot parse dns server address: {:?}", raw_addr));
+                .map_err(|_| AppError::InvalidDnsServer(raw_addr.to_owned()))?;
 
-            match connection_type {
+            Ok(match connection_type {
                 ConnectionType::Udp => {
                     Self::Udp(SyncClient::new(
-                        UdpClientConnection::new(socket_addr).unwrap_or_else(|_| {
-                            panic!("Cannot establish udp connection with {:?}", raw_addr)
-                        }),
+                        UdpClientConnection::new(socket_addr).map_err(|_| {
+                            AppError::DNSServerUnreachable(connection_type, raw_addr.to_owned())
+                        })?,
                     ))
                 },
                 ConnectionType::Tcp => {
                     Self::Tcp(SyncClient::new(
-                        TcpClientConnection::new(socket_addr).unwrap_or_else(|_| {
-                            panic!("Cannot establish tcp connection with {:?}", raw_addr)
-                        }),
+                        TcpClientConnection::new(socket_addr).map_err(|_| {
+                            AppError::DNSServerUnreachable(connection_type, raw_addr.to_owned())
+                        })?,
                     ))
                 },
-            }
+            })
         }
     }
 
