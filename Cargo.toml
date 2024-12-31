@@ -1,6 +1,6 @@
 [package]
 name = "resoy"
-version = "0.1.2"
+version = "1.0.0"
 edition = "2021"
 authors = ["Daniil", "1ort <github.com/1ort>"]
 description = "Resoy is small cli tool for DNS queries"
