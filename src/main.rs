@@ -41,6 +41,28 @@ struct Cli {
     connection: ConnectionType,
 }
 
+impl Cli {
+    fn parse_record_types(&self) -> Vec<RecordType> {
+        let unique: HashSet<&String> = HashSet::from_iter(&self.record_types);
+
+        unique
+            .iter()
+            .map(|value| {
+                RecordType::from_str(value)
+                    .unwrap_or_else(|_| panic!("Unknown record type: {:?}", value))
+            })
+            .collect()
+    }
+
+    fn parse_domain_name(&self) -> Name {
+        Name::from_str(&self.name).expect("invalid name")
+    }
+
+    fn parse_output_config(&self) -> OutputConfig {
+        OutputConfig::new(!self.seconds, !self.no_ansi)
+    }
+}
+
 #[derive(ValueEnum, Clone, Debug)]
 #[clap(rename_all = "kebab_case")]
 enum ConnectionType {
@@ -65,10 +87,10 @@ impl Display for ConnectionType {
 fn main() {
     let cli = Cli::parse();
 
-    let client = DnsClient::new(cli.connection, &cli.server);
-    let name = parse_domain_name(&cli.name);
+    let client = DnsClient::new(&cli.connection, &cli.server);
+    let name = cli.parse_domain_name();
 
-    let record_types = parse_record_types(cli.record_types);
+    let record_types = cli.parse_record_types();
 
     let mut results: Vec<Record> = vec![];
 
@@ -78,15 +100,11 @@ fn main() {
         results.extend_from_slice(answers);
     }
 
-    let output_config = OutputConfig::new(!cli.seconds, !cli.no_ansi);
+    let output_config = cli.parse_output_config();
 
     for result in results {
         println!("{}", RecordFormatter::new(result, &output_config).format())
     }
-}
-
-fn parse_domain_name(name: &str) -> Name {
-    Name::from_str(name).expect("invalid name")
 }
 
 enum DnsClient {
@@ -96,7 +114,7 @@ enum DnsClient {
 
 impl DnsClient {
     fn new(
-        connection_type: ConnectionType,
+        connection_type: &ConnectionType,
         raw_addr: &str,
     ) -> Self {
         {
@@ -134,16 +152,4 @@ impl DnsClient {
             Self::Udp(client) => client.query(name, query_class, query_type),
         }
     }
-}
-
-fn parse_record_types(raw: Vec<String>) -> Vec<RecordType> {
-    let unique: HashSet<String> = HashSet::from_iter(raw);
-
-    unique
-        .iter()
-        .map(|value| {
-            RecordType::from_str(value)
-                .unwrap_or_else(|_| panic!("Unknown record type: {:?}", value))
-        })
-        .collect()
 }
