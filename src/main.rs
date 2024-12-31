@@ -2,11 +2,11 @@ mod format;
 
 use std::{
     collections::HashSet,
-    fmt::{write, Debug, Display},
+    fmt::{Debug, Display},
     str::FromStr,
 };
 
-use clap::{builder::Str, Parser, ValueEnum};
+use clap::{Parser, ValueEnum};
 use format::{OutputConfig, RecordFormatter};
 use hickory_client::{
     client::{Client, SyncClient},
@@ -46,14 +46,13 @@ struct Cli {
 }
 
 impl Cli {
-    fn parse_record_types(&self) -> Vec<RecordType> {
-        let unique: HashSet<&String> = HashSet::from_iter(&self.record_types);
-
-        unique
+    fn parse_record_types(&self) -> Result<Vec<RecordType>, AppError> {
+        self.record_types
             .iter()
+            .collect::<HashSet<_>>()
+            .into_iter()
             .map(|value| {
-                RecordType::from_str(value)
-                    .unwrap_or_else(|_| panic!("Unknown record type: {:?}", value))
+                RecordType::from_str(value).map_err(|_| AppError::UnknownRecordType(value.clone()))
             })
             .collect()
     }
@@ -67,7 +66,7 @@ impl Cli {
     }
 }
 
-#[derive(ValueEnum, Clone, Debug)]
+#[derive(ValueEnum, Clone, Debug, Copy)]
 #[clap(rename_all = "kebab_case")]
 enum ConnectionType {
     Udp,
@@ -122,10 +121,10 @@ impl Debug for AppError {
 fn main() -> Result<(), AppError> {
     let cli = Cli::parse();
 
-    let client = DnsClient::new(&cli.connection, &cli.server);
+    let client = DnsClient::new(cli.connection, &cli.server)?;
     let name = cli.parse_domain_name()?;
 
-    let record_types = cli.parse_record_types();
+    let record_types = cli.parse_record_types()?;
 
     let mut results: Vec<Record> = vec![];
 
@@ -150,30 +149,30 @@ enum DnsClient {
 
 impl DnsClient {
     fn new(
-        connection_type: &ConnectionType,
+        connection_type: ConnectionType,
         raw_addr: &str,
-    ) -> Self {
+    ) -> Result<Self, AppError> {
         {
             let socket_addr = raw_addr
                 .parse()
-                .unwrap_or_else(|_| panic!("Cannot parse dns server address: {:?}", raw_addr));
+                .map_err(|_| AppError::InvalidDnsServer(raw_addr.to_owned()))?;
 
-            match connection_type {
+            Ok(match connection_type {
                 ConnectionType::Udp => {
                     Self::Udp(SyncClient::new(
-                        UdpClientConnection::new(socket_addr).unwrap_or_else(|_| {
-                            panic!("Cannot establish udp connection with {:?}", raw_addr)
-                        }),
+                        UdpClientConnection::new(socket_addr).map_err(|_| {
+                            AppError::DNSServerUnreachable(connection_type, raw_addr.to_owned())
+                        })?,
                     ))
                 },
                 ConnectionType::Tcp => {
                     Self::Tcp(SyncClient::new(
-                        TcpClientConnection::new(socket_addr).unwrap_or_else(|_| {
-                            panic!("Cannot establish tcp connection with {:?}", raw_addr)
-                        }),
+                        TcpClientConnection::new(socket_addr).map_err(|_| {
+                            AppError::DNSServerUnreachable(connection_type, raw_addr.to_owned())
+                        })?,
                     ))
                 },
-            }
+            })
         }
     }
 
