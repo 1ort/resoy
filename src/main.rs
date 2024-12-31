@@ -1,8 +1,12 @@
 mod format;
 
-use std::{collections::HashSet, fmt::Display, str::FromStr};
+use std::{
+    collections::HashSet,
+    fmt::{write, Display},
+    str::FromStr,
+};
 
-use clap::{Parser, ValueEnum};
+use clap::{builder::Str, Parser, ValueEnum};
 use format::{OutputConfig, RecordFormatter};
 use hickory_client::{
     client::{Client, SyncClient},
@@ -54,8 +58,8 @@ impl Cli {
             .collect()
     }
 
-    fn parse_domain_name(&self) -> Name {
-        Name::from_str(&self.name).expect("invalid name")
+    fn parse_domain_name(&self) -> Result<Name, AppError> {
+        Name::from_str(&self.name).map_err(|_| AppError::InvalidDomainName(self.name.clone()))
     }
 
     fn parse_output_config(&self) -> OutputConfig {
@@ -81,6 +85,37 @@ impl Display for ConnectionType {
         };
         write!(f, "{}", s)?;
         Ok(())
+    }
+}
+
+enum AppError {
+    InvalidDomainName(String),
+    UnknownRecordType(String),
+    InvalidDnsServer(String),
+    DNSServerUnreachable(ConnectionType, String),
+}
+
+impl Display for AppError {
+    fn fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        match self {
+            Self::InvalidDomainName(domain) => write!(f, "Invalid name: {:?}", domain),
+            Self::UnknownRecordType(record_type) => {
+                write!(f, "Unknown record type: {:?}", record_type)
+            },
+            Self::InvalidDnsServer(host) => {
+                write!(f, "Cannot parse dns server address: {:?}", host)
+            },
+            Self::DNSServerUnreachable(connection_type, host) => {
+                write!(
+                    f,
+                    "Cannot establish {} connection with {:?}",
+                    connection_type, host
+                )
+            },
+        }
     }
 }
 
