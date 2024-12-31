@@ -3,6 +3,7 @@ mod format;
 use std::{
     collections::HashSet,
     fmt::{Debug, Display},
+    ptr::write,
     str::FromStr,
 };
 
@@ -10,7 +11,7 @@ use clap::{Parser, ValueEnum};
 use format::{OutputConfig, RecordFormatter};
 use hickory_client::{
     client::{Client, SyncClient},
-    error::ClientResult,
+    error::{ClientError, ClientResult},
     op::DnsResponse,
     rr::{DNSClass, Name, Record, RecordType},
     tcp::TcpClientConnection,
@@ -92,6 +93,7 @@ enum AppError {
     UnknownRecordType(String),
     InvalidDnsServer(String),
     DNSServerUnreachable(ConnectionType, String),
+    QueryError(ClientError),
 }
 
 impl Debug for AppError {
@@ -102,10 +104,10 @@ impl Debug for AppError {
         match self {
             Self::InvalidDomainName(domain) => write!(f, "Invalid name: {:?}", domain),
             Self::UnknownRecordType(record_type) => {
-                write!(f, "Unknown record type: {:?}", record_type)
+                write!(f, "Cannot parse record type: {:?}", record_type)
             },
             Self::InvalidDnsServer(host) => {
-                write!(f, "Cannot parse dns server address: {:?}", host)
+                write!(f, "Cannot parse DNS server address: {:?}", host)
             },
             Self::DNSServerUnreachable(connection_type, host) => {
                 write!(
@@ -113,6 +115,9 @@ impl Debug for AppError {
                     "Cannot establish {} connection with {:?}",
                     connection_type, host
                 )
+            },
+            Self::QueryError(client_error) => {
+                write!(f, "Cannot send DNS query: {}", client_error)
             },
         }
     }
@@ -129,7 +134,9 @@ fn main() -> Result<(), AppError> {
     let mut results: Vec<Record> = vec![];
 
     for record_type in record_types {
-        let response: DnsResponse = client.query(&name, DNSClass::IN, record_type).unwrap();
+        let response: DnsResponse = client
+            .query(&name, DNSClass::IN, record_type)
+            .map_err(AppError::QueryError)?;
         let answers: &[Record] = response.answers();
         results.extend_from_slice(answers);
     }
