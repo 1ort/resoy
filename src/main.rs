@@ -2,7 +2,7 @@ mod format;
 
 use std::{
     collections::HashSet,
-    fmt::{write, Display},
+    fmt::{write, Debug, Display},
     str::FromStr,
 };
 
@@ -95,7 +95,7 @@ enum AppError {
     DNSServerUnreachable(ConnectionType, String),
 }
 
-impl Display for AppError {
+impl Debug for AppError {
     fn fmt(
         &self,
         f: &mut std::fmt::Formatter<'_>,
@@ -119,11 +119,11 @@ impl Display for AppError {
     }
 }
 
-fn main() {
+fn main() -> Result<(), AppError> {
     let cli = Cli::parse();
 
     let client = DnsClient::new(&cli.connection, &cli.server);
-    let name = cli.parse_domain_name();
+    let name = cli.parse_domain_name()?;
 
     let record_types = cli.parse_record_types();
 
@@ -140,6 +140,7 @@ fn main() {
     for result in results {
         println!("{}", RecordFormatter::new(result, &output_config).format())
     }
+    Ok(())
 }
 
 enum DnsClient {
