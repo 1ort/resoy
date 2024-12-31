@@ -3,7 +3,6 @@ mod format;
 use std::{
     collections::HashSet,
     fmt::{Debug, Display},
-    ptr::write,
     str::FromStr,
 };
 
