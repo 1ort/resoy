@@ -63,16 +63,13 @@ impl<'a> RecordFormatter<'a> {
     }
 
     #[cfg(windows)]
-    pub fn format(
-        &self,
-        config: OutputConfig,
-    ) {
-        println!(
+    pub fn format(&self) -> String {
+        format!(
             "{:>5} {} {:>12} {}",
-            self.record_type.to_string(),
-            self.name,
-            Self::format_duration(self.ttl_secods, &self.config),
-            self.payload,
+            self.rormat_record_type(),
+            self.format_name(),
+            self.format_duration(),
+            self.format_payload(),
         )
     }
 

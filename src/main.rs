@@ -127,10 +127,10 @@ fn main() -> Result<(), AppError> {
 
     let client = DnsClient::new(cli.connection, &cli.server)?;
     let name = cli.parse_domain_name()?;
-
     let record_types = cli.parse_record_types()?;
+    let output_config = cli.parse_output_config();
 
-    let mut results: Vec<Record> = vec![];
+    let mut results: Vec<Record> = Vec::with_capacity(record_types.len());
 
     for record_type in record_types {
         let response: DnsResponse = client
@@ -139,8 +139,6 @@ fn main() -> Result<(), AppError> {
         let answers: &[Record] = response.answers();
         results.extend_from_slice(answers);
     }
-
-    let output_config = cli.parse_output_config();
 
     for result in results {
         println!("{}", RecordFormatter::new(result, &output_config).format())
@@ -158,28 +156,26 @@ impl DnsClient {
         connection_type: ConnectionType,
         raw_addr: &str,
     ) -> Result<Self, AppError> {
-        {
-            let socket_addr = raw_addr
-                .parse()
-                .map_err(|_| AppError::InvalidDnsServer(raw_addr.to_owned()))?;
+        let socket_addr = raw_addr
+            .parse()
+            .map_err(|_| AppError::InvalidDnsServer(raw_addr.to_owned()))?;
 
-            Ok(match connection_type {
-                ConnectionType::Udp => {
-                    Self::Udp(SyncClient::new(
-                        UdpClientConnection::new(socket_addr).map_err(|_| {
-                            AppError::DNSServerUnreachable(connection_type, raw_addr.to_owned())
-                        })?,
-                    ))
-                },
-                ConnectionType::Tcp => {
-                    Self::Tcp(SyncClient::new(
-                        TcpClientConnection::new(socket_addr).map_err(|_| {
-                            AppError::DNSServerUnreachable(connection_type, raw_addr.to_owned())
-                        })?,
-                    ))
-                },
-            })
-        }
+        Ok(match connection_type {
+            ConnectionType::Udp => {
+                Self::Udp(SyncClient::new(
+                    UdpClientConnection::new(socket_addr).map_err(|_| {
+                        AppError::DNSServerUnreachable(connection_type, raw_addr.to_owned())
+                    })?,
+                ))
+            },
+            ConnectionType::Tcp => {
+                Self::Tcp(SyncClient::new(
+                    TcpClientConnection::new(socket_addr).map_err(|_| {
+                        AppError::DNSServerUnreachable(connection_type, raw_addr.to_owned())
+                    })?,
+                ))
+            },
+        })
     }
 
     fn query(
