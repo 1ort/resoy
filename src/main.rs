@@ -9,14 +9,15 @@ use std::{
 use clap::{Parser, ValueEnum};
 use format::{OutputConfig, RecordFormatter};
 use hickory_client::{
-    client::{Client, SyncClient},
+    client::{AsyncClient, Client, ClientHandle, ClientStreamingResponse, SyncClient},
     error::{ClientError, ClientResult},
     op::DnsResponse,
+    proto::{iocompat::AsyncIoTokioAsStd, xfer::DnsHandle},
     rr::{DNSClass, Name, Record, RecordType},
-    tcp::TcpClientConnection,
-    udp::UdpClientConnection,
+    tcp::{TcpClientConnection, TcpClientStream},
+    udp::{UdpClientConnection, UdpClientStream},
 };
-
+use tokio::{self, net::TcpStream as TokioTcpStream};
 /// Simple dns resolve tool
 #[derive(Parser)]
 #[command(version, about)]
@@ -121,16 +122,18 @@ impl Debug for AppError {
         }
     }
 }
-
-fn main() -> Result<(), AppError> {
+#[tokio::main]
+async fn main() -> Result<(), AppError> {
     let cli = Cli::parse();
 
-    let client = DnsClient::new(cli.connection, &cli.server)?;
+    let client = DnsClient::new(cli.connection, &cli.server).await?;
     let name = cli.parse_domain_name()?;
     let record_types = cli.parse_record_types()?;
     let output_config = cli.parse_output_config();
 
     let mut results: Vec<Record> = Vec::with_capacity(record_types.len());
+
+    tokio::join!();
 
     for record_type in record_types {
         let response: DnsResponse = client
@@ -146,13 +149,15 @@ fn main() -> Result<(), AppError> {
     Ok(())
 }
 
-enum DnsClient {
-    Tcp(SyncClient<TcpClientConnection>),
-    Udp(SyncClient<UdpClientConnection>),
-}
+// enum DnsClient {
+//     Tcp(AsyncClient<TcpClientConnection>),
+//     Udp(AsyncClient<UdpClientConnection>),
+// }
+
+struct DnsClient(AsyncClient);
 
 impl DnsClient {
-    fn new(
+    async fn new(
         connection_type: ConnectionType,
         raw_addr: &str,
     ) -> Result<Self, AppError> {
@@ -160,33 +165,28 @@ impl DnsClient {
             .parse()
             .map_err(|_| AppError::InvalidDnsServer(raw_addr.to_owned()))?;
 
-        Ok(match connection_type {
-            ConnectionType::Udp => {
-                Self::Udp(SyncClient::new(
-                    UdpClientConnection::new(socket_addr).map_err(|_| {
-                        AppError::DNSServerUnreachable(connection_type, raw_addr.to_owned())
-                    })?,
-                ))
-            },
+        match connection_type {
             ConnectionType::Tcp => {
-                Self::Tcp(SyncClient::new(
-                    TcpClientConnection::new(socket_addr).map_err(|_| {
-                        AppError::DNSServerUnreachable(connection_type, raw_addr.to_owned())
-                    })?,
-                ))
+                let (stream, sender) =
+                    TcpClientStream::<AsyncIoTokioAsStd<TokioTcpStream>>::new(socket_addr);
+                let (client, bg) = AsyncClient::new(stream, sender, None).await.map_err(|_| {
+                    AppError::DNSServerUnreachable(connection_type, raw_addr.to_owned())
+                })?;
+                tokio::spawn(bg);
+                return Ok(DnsClient(client));
             },
-        })
+            ConnectionType::Udp => {
+                unimplemented!();
+            },
+        };
     }
 
     fn query(
         &self,
-        name: &Name,
+        name: Name,
         query_class: DNSClass,
         query_type: RecordType,
-    ) -> ClientResult<DnsResponse> {
-        match self {
-            Self::Tcp(client) => client.query(name, query_class, query_type),
-            Self::Udp(client) => client.query(name, query_class, query_type),
-        }
+    ) -> ClientResponse<<AsyncClient as DnsHandle>::Response> {
+        self.0.query(name, query_class, query_type)
     }
 }

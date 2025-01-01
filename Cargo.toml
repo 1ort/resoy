@@ -10,6 +10,7 @@ repository = "https://github.com/1ort/resoy"
 [dependencies]
 clap = { version = "4.5.23", features = ["derive"] }
 hickory-client = { version = "0.24.2" }
+tokio = { version = "1.42.0", features = ["full"] }
 
 [target.'cfg(not(windows))'.dependencies]
 termion = "4.0.3"
